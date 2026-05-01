@@ -129,17 +129,13 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
 
     linhas.forEach((linha) => {
       const colunas = linha.split('\t');
-
       if (colunas.length < 6) return;
 
       const cliente = colunas[1] || '';
 
       let contrato = cliente;
-      if (cliente.includes('_')) {
-        contrato = cliente.split('_')[0];
-      } else if (cliente.includes(' ')) {
-        contrato = cliente.split(' ')[0];
-      }
+      if (cliente.includes('_')) contrato = cliente.split('_')[0];
+      else if (cliente.includes(' ')) contrato = cliente.split(' ')[0];
 
       const slot = colunas[3];
       const port = colunas[4];
@@ -180,6 +176,39 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
 
       resultado += '\n';
     });
+
+    return resultado.trim();
+  }
+
+  if (gerencia === 'ZTE') {
+    const clientes = [];
+
+    linhas.forEach((linha) => {
+      const colunas = linha.split('\t');
+      if (colunas.length < 4) return;
+
+      const onu = colunas[2];
+      const contrato = colunas[3];
+
+      if (!onu || !contrato) return;
+
+      clientes.push({ onu, contrato });
+    });
+
+    let resultado = `-:CARIMBO DE ABERTURA - NOC:-.
+Falha: Secundaria :OLT-ZTE - 1/1
+Hora/data: ${data}
+Circuitos Afetados: ${clientes.length}
+
+Interface: OLT-ZTE - 1/1 - Secundaria
+
+`;
+
+    clientes
+      .sort((a, b) => Number(a.onu) - Number(b.onu))
+      .forEach((cliente) => {
+        resultado += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
+      });
 
     return resultado.trim();
   }
