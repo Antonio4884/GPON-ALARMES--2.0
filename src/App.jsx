@@ -51,21 +51,62 @@ function extrairSfpAms(linhas) {
 
 function gerarTicketsTexto(gerencia, linhas) {
   const data = new Date().toLocaleString('pt-BR');
+  let resultadoFinal = '';
 
   const falhaPrimaria = linhas.some((linha) =>
     linha.toLowerCase().includes('the feeder fiber is broken')
   );
 
   if (falhaPrimaria) {
-    return `-:CARIMBO DE ABERTURA - NOC:-.
-Falha primária detectada
-Hora/data: ${data}`;
+    let olt = '';
+    let interfaces = [];
+    let totalCircuitos = 0;
+
+    linhas.forEach((linha) => {
+      const oltMatch = linha.match(/(olt[^\s,\t]+)/i);
+      const slotMatch = linha.match(/Slot=(\d+)/i);
+      const portMatch = linha.match(/Port=(\d+)/i);
+      const afetadosMatch = linha.match(/The number of affected ONTs=(\d+)/i);
+
+      if (oltMatch) olt = oltMatch[1];
+
+      if (slotMatch && portMatch) {
+        interfaces.push(`${slotMatch[1]}/${portMatch[1]}`);
+      }
+
+      if (afetadosMatch) {
+        totalCircuitos += Number(afetadosMatch[1]);
+      }
+    });
+
+    interfaces = [...new Set(interfaces)];
+
+    resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
+Falha: Falha em rede Primaria, OLT: ${olt}
+Hora/data: ${data}
+Equipamento: OLT: ${olt}
+
+Interface: ${interfaces.join(', ')}
+Circuitos afetados: ${totalCircuitos}
+
+Fone NOC 3318-7890
+
+`;
+
+    interfaces.forEach((item) => {
+      const [slot, port] = item.split('/');
+      resultadoFinal += `Slot:${slot}/Port:${port}\n`;
+    });
+
+    resultadoFinal += '\n\n';
   }
 
   if (gerencia === 'IMASTER') {
     const agrupado = {};
 
     linhas.forEach((linha) => {
+      if (!linha.toLowerCase().includes('distribute fiber')) return;
+
       const oltMatch = linha.match(/(olt[^\s,\t]+)/i);
       const slotMatch = linha.match(/Slot=(\d+)/i);
       const portMatch = linha.match(/Port=(\d+)/i);
@@ -82,28 +123,19 @@ Hora/data: ${data}`;
       const onu = onuMatch[1];
 
       let contrato = 'NCE';
-      if (contratoMatch) {
-        contrato = contratoMatch[1] || contratoMatch[2] || 'NCE';
-      }
+      if (contratoMatch) contrato = contratoMatch[1] || contratoMatch[2] || 'NCE';
 
       const chave = `${olt}-${slot}-${port}`;
 
       if (!agrupado[chave]) {
-        agrupado[chave] = {
-          olt,
-          slot,
-          port,
-          clientes: []
-        };
+        agrupado[chave] = { olt, slot, port, clientes: [] };
       }
 
       agrupado[chave].clientes.push({ onu, contrato });
     });
 
-    let resultado = '';
-
     Object.values(agrupado).forEach((grupo) => {
-      resultado += `-:CARIMBO DE ABERTURA - NOC:-.
+      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
 Falha: Secundaria :${grupo.olt} - ${grupo.slot}/${grupo.port}
 Hora/data: ${data}
 Circuitos Afetados: ${grupo.clientes.length}
@@ -115,13 +147,13 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
       grupo.clientes
         .sort((a, b) => Number(a.onu) - Number(b.onu))
         .forEach((cliente) => {
-          resultado += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
+          resultadoFinal += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
         });
 
-      resultado += '\n';
+      resultadoFinal += '\n';
     });
 
-    return resultado.trim();
+    return resultadoFinal.trim();
   }
 
   if (gerencia === 'UNM2000') {
@@ -141,12 +173,11 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
       const port = colunas[4];
       const onu = colunas[5];
 
-      const olt = 'OLT-UNM';
-      const chave = `${olt}-${slot}-${port}`;
+      const chave = `OLT-UNM-${slot}-${port}`;
 
       if (!agrupado[chave]) {
         agrupado[chave] = {
-          olt,
+          olt: 'OLT-UNM',
           slot,
           port,
           clientes: []
@@ -156,10 +187,8 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
       agrupado[chave].clientes.push({ onu, contrato });
     });
 
-    let resultado = '';
-
     Object.values(agrupado).forEach((grupo) => {
-      resultado += `-:CARIMBO DE ABERTURA - NOC:-.
+      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
 Falha: Secundaria :${grupo.olt} - ${grupo.slot}/${grupo.port}
 Hora/data: ${data}
 Circuitos Afetados: ${grupo.clientes.length}
@@ -171,13 +200,13 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
       grupo.clientes
         .sort((a, b) => Number(a.onu) - Number(b.onu))
         .forEach((cliente) => {
-          resultado += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
+          resultadoFinal += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
         });
 
-      resultado += '\n';
+      resultadoFinal += '\n';
     });
 
-    return resultado.trim();
+    return resultadoFinal.trim();
   }
 
   if (gerencia === 'ZTE') {
@@ -195,7 +224,7 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
       clientes.push({ onu, contrato });
     });
 
-    let resultado = `-:CARIMBO DE ABERTURA - NOC:-.
+    resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
 Falha: Secundaria :OLT-ZTE - 1/1
 Hora/data: ${data}
 Circuitos Afetados: ${clientes.length}
@@ -207,17 +236,13 @@ Interface: OLT-ZTE - 1/1 - Secundaria
     clientes
       .sort((a, b) => Number(a.onu) - Number(b.onu))
       .forEach((cliente) => {
-        resultado += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
+        resultadoFinal += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
       });
 
-    return resultado.trim();
+    return resultadoFinal.trim();
   }
 
-  return `-:CARIMBO DE ABERTURA - NOC:-.
-Gerência detectada: ${gerencia}
-Hora/data: ${data}
-
-${linhas.join('\n')}`;
+  return resultadoFinal || 'Nenhum alarme reconhecido.';
 }
 
 function processarTexto(texto) {
@@ -243,12 +268,7 @@ export default function App() {
         value={entrada}
         onChange={(e) => setEntrada(e.target.value)}
         placeholder="Cole os alarmes aqui..."
-        style={{
-          width: '100%',
-          height: '250px',
-          padding: '10px',
-          marginBottom: '10px'
-        }}
+        style={{ width: '100%', height: '250px', padding: '10px', marginBottom: '10px' }}
       />
 
       <div style={{ marginBottom: '10px' }}>
@@ -274,11 +294,7 @@ export default function App() {
         value={resultado}
         readOnly
         placeholder="Resultado aparecerá aqui..."
-        style={{
-          width: '100%',
-          height: '250px',
-          padding: '10px'
-        }}
+        style={{ width: '100%', height: '250px', padding: '10px' }}
       />
     </div>
   );
