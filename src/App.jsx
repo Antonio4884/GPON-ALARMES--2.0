@@ -103,6 +103,8 @@ Fone NOC 3318-7890
 
   if (gerencia === 'IMASTER') {
     const agrupado = {};
+    const equipamentos = new Set();
+    let totalCircuitos = 0;
 
     linhas.forEach((linha) => {
       if (!linha.toLowerCase().includes('distribute fiber')) return;
@@ -125,24 +127,36 @@ Fone NOC 3318-7890
       let contrato = 'NCE';
       if (contratoMatch) contrato = contratoMatch[1] || contratoMatch[2] || 'NCE';
 
+      equipamentos.add(olt);
+      totalCircuitos++;
+
       const chave = `${olt}-${slot}-${port}`;
 
       if (!agrupado[chave]) {
-        agrupado[chave] = { olt, slot, port, clientes: [] };
+        agrupado[chave] = {
+          olt,
+          slot,
+          port,
+          clientes: []
+        };
       }
 
       agrupado[chave].clientes.push({ onu, contrato });
     });
 
-    Object.values(agrupado).forEach((grupo) => {
+    if (totalCircuitos > 0) {
       resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha: Secundaria :${grupo.olt} - ${grupo.slot}/${grupo.port}
-Hora/data: ${data}
-Circuitos Afetados: ${grupo.clientes.length}
+Falha em rede Secudaria OLT: ${Array.from(equipamentos)[0]} - circuitos afetados: ${totalCircuitos}
+Equipamento: ${Array.from(equipamentos).join(', ')}
+Alarme: loss
+Data/Hora: ${data} BRT
 
-Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
 
 `;
+    }
+
+    Object.values(agrupado).forEach((grupo) => {
+      resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
 
       grupo.clientes
         .sort((a, b) => Number(a.onu) - Number(b.onu))
@@ -164,8 +178,8 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
       if (colunas.length < 6) return;
 
       const cliente = colunas[1] || '';
-
       let contrato = cliente;
+
       if (cliente.includes('_')) contrato = cliente.split('_')[0];
       else if (cliente.includes(' ')) contrato = cliente.split(' ')[0];
 
@@ -188,14 +202,7 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
     });
 
     Object.values(agrupado).forEach((grupo) => {
-      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha: Secundaria :${grupo.olt} - ${grupo.slot}/${grupo.port}
-Hora/data: ${data}
-Circuitos Afetados: ${grupo.clientes.length}
-
-Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
-
-`;
+      resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
 
       grupo.clientes
         .sort((a, b) => Number(a.onu) - Number(b.onu))
@@ -224,14 +231,7 @@ Interface: ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
       clientes.push({ onu, contrato });
     });
 
-    resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha: Secundaria :OLT-ZTE - 1/1
-Hora/data: ${data}
-Circuitos Afetados: ${clientes.length}
-
-Interface: OLT-ZTE - 1/1 - Secundaria
-
-`;
+    resultadoFinal += `OLT-ZTE - 1/1\n`;
 
     clientes
       .sort((a, b) => Number(a.onu) - Number(b.onu))
@@ -268,7 +268,12 @@ export default function App() {
         value={entrada}
         onChange={(e) => setEntrada(e.target.value)}
         placeholder="Cole os alarmes aqui..."
-        style={{ width: '100%', height: '250px', padding: '10px', marginBottom: '10px' }}
+        style={{
+          width: '100%',
+          height: '250px',
+          padding: '10px',
+          marginBottom: '10px'
+        }}
       />
 
       <div style={{ marginBottom: '10px' }}>
@@ -294,7 +299,11 @@ export default function App() {
         value={resultado}
         readOnly
         placeholder="Resultado aparecerá aqui..."
-        style={{ width: '100%', height: '250px', padding: '10px' }}
+        style={{
+          width: '100%',
+          height: '250px',
+          padding: '10px'
+        }}
       />
     </div>
   );
