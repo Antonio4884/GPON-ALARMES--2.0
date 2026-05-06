@@ -11,7 +11,16 @@ function detectarGerencia(linhas) {
     if (l.includes('onuid')) return 'IMASTER';
     if (l.includes('zte') || l.includes('com.zte')) return 'ZTE';
 
-    if (linha.includes('\t') && (l.includes('off line') || l.includes('link loss'))) {
+    if (
+      linha.includes('\t') &&
+      (
+        l.includes('off line') ||
+        l.includes('link loss') ||
+        l.includes('link_loss') ||
+        l.includes('/gcob[') ||
+        l.includes('/pon')
+      )
+    ) {
       return 'UNM2000';
     }
   }
@@ -174,6 +183,34 @@ Data/Hora: ${data} BRT
     const agrupado = {};
 
     linhas.forEach((linha) => {
+      // NOVO FORMATO
+      const matchNovo = linha.match(
+        /([A-Z0-9\-]+)\/GCOB\[(\d+)\]\/PON(\d+)\/(\d+)[^:]*:\[(\d+)\]/i
+      );
+
+      if (matchNovo) {
+        const olt = matchNovo[1];
+        const slot = matchNovo[2];
+        const port = matchNovo[3];
+        const contrato = matchNovo[4];
+        const onu = matchNovo[5];
+
+        const chave = `${olt}-${slot}-${port}`;
+
+        if (!agrupado[chave]) {
+          agrupado[chave] = {
+            olt,
+            slot,
+            port,
+            clientes: []
+          };
+        }
+
+        agrupado[chave].clientes.push({ onu, contrato });
+        return;
+      }
+
+      // FORMATO ANTIGO
       const colunas = linha.split('\t');
       if (colunas.length < 6) return;
 
@@ -186,12 +223,13 @@ Data/Hora: ${data} BRT
       const slot = colunas[3];
       const port = colunas[4];
       const onu = colunas[5];
+      const olt = 'OLT-UNM';
 
-      const chave = `OLT-UNM-${slot}-${port}`;
+      const chave = `${olt}-${slot}-${port}`;
 
       if (!agrupado[chave]) {
         agrupado[chave] = {
-          olt: 'OLT-UNM',
+          olt,
           slot,
           port,
           clientes: []
