@@ -146,7 +146,7 @@ Fone NOC 3318-7890
 
     if (totalCircuitos > 0) {
       resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha em rede Secudaria OLT: ${Array.from(equipamentos)[0]} - circuitos afetados: ${totalCircuitos}
+Falha em rede Secundaria OLT: ${Array.from(equipamentos)[0]} - circuitos afetados: ${totalCircuitos}
 Equipamento: ${Array.from(equipamentos).join(', ')}
 Alarme: loss
 Data/Hora: ${data} BRT
