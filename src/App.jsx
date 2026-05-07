@@ -72,6 +72,16 @@ function formatarCliente(onu, contrato) {
   return `ONU ${String(onu).padEnd(4, ' ')} | ${contrato}`;
 }
 
+function ordenarInterfaces(lista) {
+  return [...new Set(lista)].sort((a, b) => {
+    const [slotA, portA] = a.split('/').map(Number);
+    const [slotB, portB] = b.split('/').map(Number);
+
+    if (slotA !== slotB) return slotA - slotB;
+    return portA - portB;
+  });
+}
+
 function gerarTicketsTexto(gerencia, linhas) {
   const data = new Date().toLocaleString('pt-BR');
   let resultadoFinal = '';
@@ -102,7 +112,7 @@ function gerarTicketsTexto(gerencia, linhas) {
       }
     });
 
-    interfaces = [...new Set(interfaces)];
+    interfaces = ordenarInterfaces(interfaces);
 
     resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
 Falha: Falha em rede Primaria, OLT: ${olt}
@@ -124,9 +134,6 @@ Fone NOC 3318-7890
     resultadoFinal += '\n\n';
   }
 
-  // =========================================================
-  // IMASTER
-  // =========================================================
   if (gerencia === 'IMASTER') {
     const agrupado = {};
     const equipamentos = new Set();
@@ -190,266 +197,6 @@ Data/Hora: ${data} BRT
 
     Object.values(agrupado).forEach((grupo) => {
       resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
-
-      grupo.clientes
-        .sort((a, b) => Number(a.onu) - Number(b.onu))
-        .forEach((cliente) => {
-          resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
-        });
-
-      resultadoFinal += '\n';
-    });
-
-    return resultadoFinal.trim();
-  }
-
-  // =========================================================
-  // UNM2000
-  // =========================================================
-  if (gerencia === 'UNM2000') {
-    const agrupado = {};
-    const primarias = [];
-
-    linhas.forEach((linha) => {
-
-      // =========================
-      // FORMATO 1
-      // =========================
-
-      let matchNovo = linha.match(
-        /([A-Z0-9\-]+)\/GCOB\[(\d+)\]\/PON(\d+)\/.*_(\d+):\[(\d+)\]/i
-      );
-
-      if (matchNovo) {
-        const colunas = linha.split('\t');
-        const dataLinha = formatarData(colunas[16] || '');
-
-        const olt = `OLT1-PR-${matchNovo[1]}`;
-        const slot = matchNovo[2];
-        const port = matchNovo[3];
-        const contrato = matchNovo[4];
-        const onu = matchNovo[5];
-
-        const chave = `${olt}-${slot}-${port}`;
-
-        if (!agrupado[chave]) {
-          agrupado[chave] = {
-            olt,
-            slot,
-            port,
-            data: dataLinha,
-            clientes: []
-          };
-        }
-
-        agrupado[chave].clientes.push({
-          onu,
-          contrato
-        });
-
-        return;
-      }
-
-      // =========================
-      // FORMATO 2
-      // =========================
-
-      const colunasTab = linha.split('\t');
-
-      if (
-        colunasTab.length >= 6 &&
-        linha.toUpperCase().includes('LINK LOSS')
-      ) {
-
-        const clienteRaw = colunasTab[1] || '';
-
-        let contrato = 'NCE';
-
-        const contratoMatch = clienteRaw.match(/^(\d+)/);
-
-        if (contratoMatch) {
-          contrato = contratoMatch[1];
-        }
-
-        const slot = colunasTab[3];
-        const port = colunasTab[4];
-        const onu = colunasTab[5];
-
-        const olt = 'OLT-UNM2000';
-
-        const chave = `${olt}-${slot}-${port}`;
-
-        if (!agrupado[chave]) {
-          agrupado[chave] = {
-            olt,
-            slot,
-            port,
-            data: '',
-            clientes: []
-          };
-        }
-
-        agrupado[chave].clientes.push({
-          onu,
-          contrato
-        });
-
-        return;
-      }
-
-      // =========================
-      // PRIMÁRIA
-      // =========================
-
-      const matchPrimaria = linha.match(
-        /([A-Z0-9\-]+)\/GCOB\[(\d+)\]\/PON(\d+)\s*$/i
-      );
-
-      if (matchPrimaria) {
-        const olt = `OLT1-PR-${matchPrimaria[1]}`;
-        const slot = matchPrimaria[2];
-        const port = matchPrimaria[3];
-
-        const existeSecundaria = Object.values(agrupado).some(
-          (g) =>
-            g.olt === olt &&
-            g.slot === slot &&
-            g.port === port
-        );
-
-        if (!existeSecundaria) {
-          primarias.push({
-            olt,
-            slot,
-            port
-          });
-        }
-
-        return;
-      }
-    });
-
-    const primariasFiltradas = primarias.filter((p) => {
-      return !Object.values(agrupado).some(
-        (g) =>
-          g.olt === p.olt &&
-          g.slot === p.slot &&
-          g.port === p.port
-      );
-    });
-
-    primariasFiltradas.forEach((p) => {
-      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha:  Sercomtel - Primaria :${p.olt} - ${p.slot}/${p.port} - Circuitos Afetados:  
-Hora/data: 
-Alarme: LOSS
-IP: N/A
-Interface: ${p.olt} - ${p.slot}/${p.port} - Primaria 
-
-Interface: ${p.slot}/${p.port}
-
-
-`;
-    });
-
-    Object.values(agrupado).forEach((grupo) => {
-      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha:  - Sercomtel - Secundaria :${grupo.olt}- ${grupo.slot}/${grupo.port} - Circuitos Afetados: ${grupo.clientes.length}
-Hora/data: ${grupo.data}
-Alarme: LOSS
-IP: N/A
-Interface:${grupo.olt}- ${grupo.slot}/${grupo.port} - Secundaria
-
-`;
-
-      grupo.clientes
-        .sort((a, b) => Number(a.onu) - Number(b.onu))
-        .forEach((cliente) => {
-          resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
-        });
-
-      resultadoFinal += '\n';
-    });
-
-    return resultadoFinal.trim();
-  }
-
-  // =========================================================
-  // ZTE
-  // =========================================================
-  if (gerencia === 'ZTE') {
-    const agrupado = {};
-    const primarias = [];
-
-    linhas.forEach((linha) => {
-
-      const secMatch = linha.match(
-        /(olt[^\s\t]+).*RACK=\d+,SHELF=\d+,SLOT=(\d+),PORT=(\d+),ONU=(\d+).*ONU Name=(\d+)/i
-      );
-
-      if (secMatch) {
-        const [_, olt, slot, port, onu, contrato] = secMatch;
-
-        const chave = `${olt}-${slot}-${port}`;
-
-        if (!agrupado[chave]) {
-          agrupado[chave] = {
-            olt,
-            slot,
-            port,
-            clientes: []
-          };
-        }
-
-        agrupado[chave].clientes.push({
-          onu,
-          contrato
-        });
-
-        return;
-      }
-
-      const primMatch = linha.match(
-        /(olt[^\s\t]+).*RACK=\d+,SHELF=\d+,SLOT=(\d+),PORT=(\d+)(?!,ONU=)/i
-      );
-
-      if (primMatch) {
-        primarias.push({
-          olt: primMatch[1],
-          slot: primMatch[2],
-          port: primMatch[3]
-        });
-      }
-    });
-
-    primarias.forEach((p) => {
-      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha:  - NOVA -Falha em rede Primaria, OLT:   ${p.olt} - ${p.slot}/${p.port} - circuitos afetados:  
-Hora/data: 
-Equipamento: OLT:   ${p.olt} - ${p.slot}/${p.port}
-Alarme: LOSS
-IP: N/A
-Interface:  ${p.olt} - ${p.slot}/${p.port} - Primaria
-Fone NOC 3318-7890
-
-
-${p.olt}
-SLOT ${p.slot} / PON ${p.port}
-
-`;
-    });
-
-    Object.values(agrupado).forEach((grupo) => {
-      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha:  - NOVA -Falha em rede Secundaria, OLT:  OLT: ${grupo.olt} - ${grupo.slot}/${grupo.port} - circuitos afetados: ${grupo.clientes.length}
-Hora/data:  
-Equipamento: OLT:   ${grupo.olt} - ${grupo.slot}/${grupo.port}
-Alarme: LOSS
-IP: N/A
-Interface:   ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
-
-
-`;
 
       grupo.clientes
         .sort((a, b) => Number(a.onu) - Number(b.onu))
