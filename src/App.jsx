@@ -62,6 +62,7 @@ function formatarData(dataTexto) {
   if (!dataTexto) return '';
 
   const match = dataTexto.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+
   if (!match) return '';
 
   return `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`;
@@ -87,8 +88,14 @@ function gerarTicketsTexto(gerencia, linhas) {
       const afetadosMatch = linha.match(/The number of affected ONTs=(\d+)/i);
 
       if (oltMatch) olt = oltMatch[1];
-      if (slotMatch && portMatch) interfaces.push(`${slotMatch[1]}/${portMatch[1]}`);
-      if (afetadosMatch) totalCircuitos += Number(afetadosMatch[1]);
+
+      if (slotMatch && portMatch) {
+        interfaces.push(`${slotMatch[1]}/${portMatch[1]}`);
+      }
+
+      if (afetadosMatch) {
+        totalCircuitos += Number(afetadosMatch[1]);
+      }
     });
 
     interfaces = [...new Set(interfaces)];
@@ -113,6 +120,9 @@ Fone NOC 3318-7890
     resultadoFinal += '\n\n';
   }
 
+  // =========================================================
+  // IMASTER
+  // =========================================================
   if (gerencia === 'IMASTER') {
     const agrupado = {};
     const equipamentos = new Set();
@@ -125,6 +135,7 @@ Fone NOC 3318-7890
       const slotMatch = linha.match(/Slot=(\d+)/i);
       const portMatch = linha.match(/Port=(\d+)/i);
       const onuMatch = linha.match(/ONUID=(\d+)/i);
+
       const contratoMatch = linha.match(
         /Description of the ONT\(only for NMS\)=(\d+)|ONT Password=(\d+)/i
       );
@@ -135,9 +146,12 @@ Fone NOC 3318-7890
       const slot = slotMatch[1];
       const port = portMatch[1];
       const onu = onuMatch[1];
-      const contrato = contratoMatch
-        ? contratoMatch[1] || contratoMatch[2] || 'NCE'
-        : 'NCE';
+
+      let contrato = 'NCE';
+
+      if (contratoMatch) {
+        contrato = contratoMatch[1] || contratoMatch[2] || 'NCE';
+      }
 
       equipamentos.add(olt);
       totalCircuitos++;
@@ -145,10 +159,18 @@ Fone NOC 3318-7890
       const chave = `${olt}-${slot}-${port}`;
 
       if (!agrupado[chave]) {
-        agrupado[chave] = { olt, slot, port, clientes: [] };
+        agrupado[chave] = {
+          olt,
+          slot,
+          port,
+          clientes: []
+        };
       }
 
-      agrupado[chave].clientes.push({ onu, contrato });
+      agrupado[chave].clientes.push({
+        onu,
+        contrato
+      });
     });
 
     if (totalCircuitos > 0) {
@@ -177,24 +199,20 @@ Data/Hora: ${data} BRT
     return resultadoFinal.trim();
   }
 
+  // =========================================================
+  // UNM2000
+  // =========================================================
   if (gerencia === 'UNM2000') {
     const agrupado = {};
     const primarias = [];
 
     linhas.forEach((linha) => {
-      const matchPrimaria = linha.match(/([A-Z0-9\-]+)\/GCOB\[(\d+)\]\/PON(\d+)\s*$/i);
 
-      if (matchPrimaria) {
-        primarias.push({
-          olt: `OLT1-PR-${matchPrimaria[1]}`,
-          slot: matchPrimaria[2],
-          port: matchPrimaria[3]
-        });
-        return;
-      }
-
+      // =========================
+      // SECUNDÁRIA NOVO PADRÃO
+      // =========================
       const matchNovo = linha.match(
-        /([A-Z0-9\-]+)\/GCOB\[(\d+)\]\/PON(\d+)\/(\d+)[^:]*:\[(\d+)\]/i
+        /([A-Z0-9\-]+)\/GCOB\[(\d+)\]\/PON(\d+)\/.*_(\d+):\[(\d+)\]/i
       );
 
       if (matchNovo) {
@@ -219,11 +237,57 @@ Data/Hora: ${data} BRT
           };
         }
 
-        agrupado[chave].clientes.push({ onu, contrato });
+        agrupado[chave].clientes.push({
+          onu,
+          contrato
+        });
+
+        return;
+      }
+
+      // =========================
+      // PRIMÁRIA
+      // =========================
+      const matchPrimaria = linha.match(
+        /([A-Z0-9\-]+)\/GCOB\[(\d+)\]\/PON(\d+)\s*$/i
+      );
+
+      if (matchPrimaria) {
+        const olt = `OLT1-PR-${matchPrimaria[1]}`;
+        const slot = matchPrimaria[2];
+        const port = matchPrimaria[3];
+
+        const existeSecundaria = Object.values(agrupado).some(
+          (g) =>
+            g.olt === olt &&
+            g.slot === slot &&
+            g.port === port
+        );
+
+        if (!existeSecundaria) {
+          primarias.push({
+            olt,
+            slot,
+            port
+          });
+        }
+
+        return;
       }
     });
 
-    primarias.forEach((p) => {
+    // REMOVE PRIMÁRIA SE EXISTIR SECUNDÁRIA
+    const primariasFiltradas = primarias.filter((p) => {
+      return !Object.values(agrupado).some(
+        (g) =>
+          g.olt === p.olt &&
+          g.slot === p.slot &&
+          g.port === p.port
+      );
+    });
+
+    // SAÍDA PRIMÁRIA
+    primariasFiltradas.forEach((p) => {
       resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
 Falha:  Sercomtel - Primaria :${p.olt} - ${p.slot}/${p.port} - Circuitos Afetados:  
 Hora/data: 
@@ -237,9 +301,10 @@ Interface: ${p.slot}/${p.port}
 `;
     });
 
+    // SAÍDA SECUNDÁRIA
     Object.values(agrupado).forEach((grupo) => {
       resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha:  - Sercomtel - Secundaria :${grupo.olt}- ${grupo.slot}/${grupo.port} - Circuitos Afetados: 
+Falha:  - Sercomtel - Secundaria :${grupo.olt}- ${grupo.slot}/${grupo.port} - Circuitos Afetados: ${grupo.clientes.length}
 Hora/data: ${grupo.data}
 Alarme: LOSS
 IP: N/A
@@ -259,24 +324,38 @@ Interface:${grupo.olt}- ${grupo.slot}/${grupo.port} - Secundaria
     return resultadoFinal.trim();
   }
 
+  // =========================================================
+  // ZTE
+  // =========================================================
   if (gerencia === 'ZTE') {
     const agrupado = {};
     const primarias = [];
 
     linhas.forEach((linha) => {
+
       const secMatch = linha.match(
         /(olt[^\s\t]+).*RACK=\d+,SHELF=\d+,SLOT=(\d+),PORT=(\d+),ONU=(\d+).*ONU Name=(\d+)/i
       );
 
       if (secMatch) {
         const [_, olt, slot, port, onu, contrato] = secMatch;
+
         const chave = `${olt}-${slot}-${port}`;
 
         if (!agrupado[chave]) {
-          agrupado[chave] = { olt, slot, port, clientes: [] };
+          agrupado[chave] = {
+            olt,
+            slot,
+            port,
+            clientes: []
+          };
         }
 
-        agrupado[chave].clientes.push({ onu, contrato });
+        agrupado[chave].clientes.push({
+          onu,
+          contrato
+        });
+
         return;
       }
 
@@ -353,20 +432,35 @@ export default function App() {
   const [resultado, setResultado] = useState('');
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'Arial', maxWidth: '1000px', margin: '0 auto' }}>
+    <div
+      style={{
+        padding: '20px',
+        fontFamily: 'Arial',
+        maxWidth: '1000px',
+        margin: '0 auto'
+      }}
+    >
       <h1>🔧 Huawei, UNM2000, AMS5520 e ZTE</h1>
 
       <textarea
         value={entrada}
         onChange={(e) => setEntrada(e.target.value)}
         placeholder="Cole os alarmes aqui..."
-        style={{ width: '100%', height: '250px', padding: '10px', marginBottom: '10px' }}
+        style={{
+          width: '100%',
+          height: '250px',
+          padding: '10px',
+          marginBottom: '10px'
+        }}
       />
 
       <div style={{ marginBottom: '10px' }}>
         <button
           onClick={() => setResultado(processarTexto(entrada))}
-          style={{ marginRight: '10px', padding: '10px 20px' }}
+          style={{
+            marginRight: '10px',
+            padding: '10px 20px'
+          }}
         >
           Gerar Alarme
         </button>
@@ -376,7 +470,9 @@ export default function App() {
             setEntrada('');
             setResultado('');
           }}
-          style={{ padding: '10px 20px' }}
+          style={{
+            padding: '10px 20px'
+          }}
         >
           Limpar
         </button>
@@ -386,7 +482,11 @@ export default function App() {
         value={resultado}
         readOnly
         placeholder="Resultado aparecerá aqui..."
-        style={{ width: '100%', height: '250px', padding: '10px' }}
+        style={{
+          width: '100%',
+          height: '250px',
+          padding: '10px'
+        }}
       />
     </div>
   );
