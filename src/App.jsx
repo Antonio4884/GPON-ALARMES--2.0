@@ -68,6 +68,10 @@ function formatarData(dataTexto) {
   return `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`;
 }
 
+function formatarCliente(onu, contrato) {
+  return `ONU ${String(onu).padEnd(4, ' ')} | ${contrato}`;
+}
+
 function gerarTicketsTexto(gerencia, linhas) {
   const data = new Date().toLocaleString('pt-BR');
   let resultadoFinal = '';
@@ -190,7 +194,7 @@ Data/Hora: ${data} BRT
       grupo.clientes
         .sort((a, b) => Number(a.onu) - Number(b.onu))
         .forEach((cliente) => {
-          resultadoFinal += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
+          resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
         });
 
       resultadoFinal += '\n';
@@ -210,7 +214,6 @@ Data/Hora: ${data} BRT
 
       // =========================
       // FORMATO 1
-      // SFO-02/GCOB[1]/PON13/S01.P13.x059_1399102:[59]
       // =========================
 
       let matchNovo = linha.match(
@@ -249,7 +252,6 @@ Data/Hora: ${data} BRT
 
       // =========================
       // FORMATO 2
-      // LINK LOSS 1284413_CLIENTE AN5506 1 13 66
       // =========================
 
       const colunasTab = linha.split('\t');
@@ -363,7 +365,7 @@ Interface:${grupo.olt}- ${grupo.slot}/${grupo.port} - Secundaria
       grupo.clientes
         .sort((a, b) => Number(a.onu) - Number(b.onu))
         .forEach((cliente) => {
-          resultadoFinal += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
+          resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
         });
 
       resultadoFinal += '\n';
@@ -452,7 +454,7 @@ Interface:   ${grupo.olt} - ${grupo.slot}/${grupo.port} - Secundaria
       grupo.clientes
         .sort((a, b) => Number(a.onu) - Number(b.onu))
         .forEach((cliente) => {
-          resultadoFinal += `ONU ${cliente.onu} - Contrato ${cliente.contrato}\n`;
+          resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
         });
 
       resultadoFinal += '\n';
