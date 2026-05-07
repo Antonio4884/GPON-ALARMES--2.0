@@ -209,9 +209,11 @@ Data/Hora: ${data} BRT
     linhas.forEach((linha) => {
 
       // =========================
-      // SECUNDÁRIA NOVO PADRÃO
+      // FORMATO 1
+      // SFO-02/GCOB[1]/PON13/S01.P13.x059_1399102:[59]
       // =========================
-      const matchNovo = linha.match(
+
+      let matchNovo = linha.match(
         /([A-Z0-9\-]+)\/GCOB\[(\d+)\]\/PON(\d+)\/.*_(\d+):\[(\d+)\]/i
       );
 
@@ -246,8 +248,57 @@ Data/Hora: ${data} BRT
       }
 
       // =========================
+      // FORMATO 2
+      // LINK LOSS 1284413_CLIENTE AN5506 1 13 66
+      // =========================
+
+      const colunasTab = linha.split('\t');
+
+      if (
+        colunasTab.length >= 6 &&
+        linha.toUpperCase().includes('LINK LOSS')
+      ) {
+
+        const clienteRaw = colunasTab[1] || '';
+
+        let contrato = 'NCE';
+
+        const contratoMatch = clienteRaw.match(/^(\d+)/);
+
+        if (contratoMatch) {
+          contrato = contratoMatch[1];
+        }
+
+        const slot = colunasTab[3];
+        const port = colunasTab[4];
+        const onu = colunasTab[5];
+
+        const olt = 'OLT-UNM2000';
+
+        const chave = `${olt}-${slot}-${port}`;
+
+        if (!agrupado[chave]) {
+          agrupado[chave] = {
+            olt,
+            slot,
+            port,
+            data: '',
+            clientes: []
+          };
+        }
+
+        agrupado[chave].clientes.push({
+          onu,
+          contrato
+        });
+
+        return;
+      }
+
+      // =========================
       // PRIMÁRIA
       // =========================
+
       const matchPrimaria = linha.match(
         /([A-Z0-9\-]+)\/GCOB\[(\d+)\]\/PON(\d+)\s*$/i
       );
@@ -276,7 +327,6 @@ Data/Hora: ${data} BRT
       }
     });
 
-    // REMOVE PRIMÁRIA SE EXISTIR SECUNDÁRIA
     const primariasFiltradas = primarias.filter((p) => {
       return !Object.values(agrupado).some(
         (g) =>
@@ -286,7 +336,6 @@ Data/Hora: ${data} BRT
       );
     });
 
-    // SAÍDA PRIMÁRIA
     primariasFiltradas.forEach((p) => {
       resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
 Falha:  Sercomtel - Primaria :${p.olt} - ${p.slot}/${p.port} - Circuitos Afetados:  
@@ -301,7 +350,6 @@ Interface: ${p.slot}/${p.port}
 `;
     });
 
-    // SAÍDA SECUNDÁRIA
     Object.values(agrupado).forEach((grupo) => {
       resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
 Falha:  - Sercomtel - Secundaria :${grupo.olt}- ${grupo.slot}/${grupo.port} - Circuitos Afetados: ${grupo.clientes.length}
