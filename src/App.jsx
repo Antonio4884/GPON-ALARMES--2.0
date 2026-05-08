@@ -7,6 +7,15 @@ function detectarGerencia(linhas) {
     if (l.includes('pon port:') && l.includes('.lt') && l.includes('.pon')) return 'PRIMARIA_CSV';
     if (l.includes('ont:') && l.includes('.lt') && l.includes('.pon')) return 'AMS';
     if (l.includes('ethernet lt port:')) return 'AMS_SFP';
+
+    // Huawei iMaster primária
+    if (
+      l.includes('the feeder fiber is broken') ||
+      l.includes('expected optical signals')
+    ) {
+      return 'IMASTER_PRIMARIA';
+    }
+
     if (l.includes('frame=') && l.includes('slot=') && l.includes('port=')) return 'IMASTER';
     if (l.includes('onuid')) return 'IMASTER';
     if (l.includes('zte') || l.includes('c600') || l.includes('rack=')) return 'ZTE';
@@ -58,16 +67,6 @@ function extrairSfpAms(linhas) {
     .join('\n');
 }
 
-function formatarData(dataTexto) {
-  if (!dataTexto) return '';
-
-  const match = dataTexto.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
-
-  if (!match) return '';
-
-  return `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`;
-}
-
 function formatarCliente(onu, contrato) {
   return `ONU ${String(onu).padEnd(4, ' ')} - ${contrato}`;
 }
@@ -80,6 +79,63 @@ function gerarTicketsTexto(gerencia, linhas) {
   const data = new Date().toLocaleString('pt-BR');
   let resultadoFinal = '';
 
+  // ================= IMASTER PRIMARIA =================
+  if (gerencia === 'IMASTER_PRIMARIA') {
+    let olt = '';
+    let frame = '';
+    let slot = '';
+    let port = '';
+    let onts = [];
+
+    linhas.forEach((linha) => {
+      const oltMatch = linha.match(/(olt[^\s,\t]+)/i);
+      const frameMatch = linha.match(/Frame=(\d+)/i);
+      const slotMatch = linha.match(/Slot=(\d+)/i);
+      const portMatch = linha.match(/Port=(\d+)/i);
+      const ontsMatch = linha.match(/The list of affected ONTs=([0-9,\-]+)/i);
+
+      if (oltMatch) olt = oltMatch[1];
+      if (frameMatch) frame = frameMatch[1];
+      if (slotMatch) slot = slotMatch[1];
+      if (portMatch) port = portMatch[1];
+
+      if (ontsMatch) {
+        ontsMatch[1].split(',').forEach((item) => {
+          if (item.includes('-')) {
+            const [inicio, fim] = item.split('-').map(Number);
+            for (let i = inicio; i <= fim; i++) {
+              onts.push(i);
+            }
+          } else {
+            onts.push(Number(item));
+          }
+        });
+      }
+    });
+
+    onts = [...new Set(onts)].sort((a, b) => a - b);
+
+    resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
+Falha em rede Primaria OLT: ${olt}
+Equipamento: ${olt}
+Alarme: FEEDER LOS
+Data/Hora: ${data} BRT
+
+Interface:
+${olt}:F${frame}.S${slot}.P${port}
+
+Circuitos afetados: ${onts.length}
+
+Lista ONTs:
+${onts.map((o) => `ONU ${o}`).join('\n')}
+
+Fone NOC 3318-7890
+`;
+
+    return resultadoFinal.trim();
+  }
+
+  // ================= UNM2000 =================
   if (gerencia === 'UNM2000') {
     const temSecundaria = linhas.some((linha) =>
       /\/PON\d+\/\d+.*:\[\d+\]/i.test(linha)
@@ -124,7 +180,6 @@ Falha em rede Secundaria OLT: ${olt} - circuitos afetados: ${totalCircuitos}
 Equipamento: ${olt}
 Alarme: LINK LOSS
 Data/Hora: ${data} BRT
-
 
 `;
 
@@ -172,78 +227,28 @@ Fone NOC 3318-7890
     return resultadoFinal.trim();
   }
 
+  // ================= ZTE =================
   if (gerencia === 'ZTE') {
-    const agrupado = {};
     let olt = '';
-    let totalCircuitos = 0;
+    let slot = '';
+    let port = '';
 
     linhas.forEach((linha) => {
       const oltMatch = linha.match(/(olt[^\s,\t]+)/i);
       const slotMatch = linha.match(/SLOT=(\d+)/i);
       const portMatch = linha.match(/PORT=(\d+)/i);
-      const onuMatch = linha.match(/ONU=(\d+)/i);
 
-      const contratoMatch = linha.match(
-        /ONU Name=(\d+)|password:(\d+)|ONU Description=(\d+)/i
-      );
-
-      if (!oltMatch || !slotMatch || !portMatch || !onuMatch) return;
-
-      const oltNome = oltMatch[1];
-      const slot = slotMatch[1];
-      const port = portMatch[1];
-      const onu = onuMatch[1];
-
-      let contrato = 'NCE';
-
-      if (contratoMatch) {
-        contrato =
-          contratoMatch[1] ||
-          contratoMatch[2] ||
-          contratoMatch[3] ||
-          'NCE';
-      }
-
-      olt = oltNome;
-      totalCircuitos++;
-
-      const chave = `${oltNome}-${slot}-${port}`;
-
-      if (!agrupado[chave]) {
-        agrupado[chave] = {
-          olt: oltNome,
-          slot,
-          port,
-          clientes: []
-        };
-      }
-
-      agrupado[chave].clientes.push({
-        onu,
-        contrato
-      });
+      if (oltMatch) olt = oltMatch[1];
+      if (slotMatch) slot = slotMatch[1];
+      if (portMatch) port = portMatch[1];
     });
 
     resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha em rede Secundaria OLT: ${olt} - circuitos afetados: ${totalCircuitos}
-Equipamento: ${olt}
-Alarme: ZTE LOS / POWER LOW
-Data/Hora: ${data} BRT
-
-
+Falha em rede ZTE
+OLT: ${olt}
+Interface: ${slot}/${port}
+Data/Hora: ${data}
 `;
-
-    Object.values(agrupado).forEach((grupo) => {
-      resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
-
-      grupo.clientes
-        .sort((a, b) => Number(a.onu) - Number(b.onu))
-        .forEach((cliente) => {
-          resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
-        });
-
-      resultadoFinal += '\n';
-    });
 
     return resultadoFinal.trim();
   }
@@ -268,7 +273,7 @@ export default function App() {
 
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial', maxWidth: '1000px', margin: '0 auto' }}>
-      <h1>🔧 Huawei, UNM2000, AMS5520 e ZTE</h1>
+      <h1>🔧 Parser Huawei / UNM2000 / AMS5520 / ZTE</h1>
 
       <textarea
         value={entrada}
