@@ -17,7 +17,7 @@ function detectarGerencia(linhas) {
         l.includes('off line') ||
         l.includes('link loss') ||
         l.includes('link_loss') ||
-        l.includes('/gcob[') ||
+        l.includes('/gc') ||
         l.includes('/pon')
       )
     ) {
@@ -73,13 +73,7 @@ function formatarCliente(onu, contrato) {
 }
 
 function ordenarInterfaces(lista) {
-  return [...new Set(lista)].sort((a, b) => {
-    const [slotA, portA] = a.split('/').map(Number);
-    const [slotB, portB] = b.split('/').map(Number);
-
-    if (slotA !== slotB) return slotA - slotB;
-    return portA - portB;
-  });
+  return [...new Set(lista)].sort((a, b) => a.localeCompare(b));
 }
 
 function gerarTicketsTexto(gerencia, linhas) {
@@ -132,6 +126,47 @@ Fone NOC 3318-7890
     });
 
     resultadoFinal += '\n\n';
+  }
+
+  if (gerencia === 'UNM2000') {
+    let olt = '';
+    let interfaces = [];
+    let dataAlarme = '';
+
+    linhas.forEach((linha) => {
+      const oltMatch = linha.match(/\t([A-Z0-9-]+)\t/i);
+      const interfaceMatch = linha.match(/([A-Z0-9-]+\/GC\d+B\[\d+\]\/PON\d+)/i);
+      const dataMatch = linha.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+
+      if (oltMatch && !olt) {
+        olt = oltMatch[1];
+      }
+
+      if (interfaceMatch) {
+        interfaces.push(interfaceMatch[1]);
+      }
+
+      if (dataMatch && !dataAlarme) {
+        dataAlarme = formatarData(dataMatch[1]);
+      }
+    });
+
+    interfaces = ordenarInterfaces(interfaces);
+
+    resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
+Falha: Falha em rede Primaria, OLT: ${olt}
+Hora/data: ${dataAlarme || data}
+Equipamento: ${olt}
+
+Interface:
+${interfaces.join('\n')}
+
+Circuitos afetados: ${interfaces.length}
+
+Fone NOC 3318-7890
+`;
+
+    return resultadoFinal.trim();
   }
 
   if (gerencia === 'IMASTER') {
