@@ -129,6 +129,68 @@ Fone NOC 3318-7890
   }
 
   if (gerencia === 'UNM2000') {
+    const temSecundaria = linhas.some((linha) =>
+      /\/PON\d+\/\d+.*:\[\d+\]/i.test(linha)
+    );
+
+    if (temSecundaria) {
+      const agrupado = {};
+      let olt = '';
+      let totalCircuitos = 0;
+
+      linhas.forEach((linha) => {
+        const match = linha.match(
+          /([A-Z0-9-]+)\/GC(\d+)B\[(\d+)\]\/PON(\d+)\/(\d+).*:\[(\d+)\]/i
+        );
+
+        if (!match) return;
+
+        const [, oltNome, slot, , pon, contrato, onu] = match;
+
+        olt = oltNome;
+        totalCircuitos++;
+
+        const chave = `${oltNome}-${slot}-${pon}`;
+
+        if (!agrupado[chave]) {
+          agrupado[chave] = {
+            olt: oltNome,
+            slot,
+            port: pon,
+            clientes: []
+          };
+        }
+
+        agrupado[chave].clientes.push({
+          onu,
+          contrato
+        });
+      });
+
+      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
+Falha em rede Secundaria OLT: ${olt} - circuitos afetados: ${totalCircuitos}
+Equipamento: ${olt}
+Alarme: LINK LOSS
+Data/Hora: ${data} BRT
+
+
+`;
+
+      Object.values(agrupado).forEach((grupo) => {
+        resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
+
+        grupo.clientes
+          .sort((a, b) => Number(a.onu) - Number(b.onu))
+          .forEach((cliente) => {
+            resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
+          });
+
+        resultadoFinal += '\n';
+      });
+
+      return resultadoFinal.trim();
+    }
+
     let olt = '';
     let interfaces = [];
     let dataAlarme = '';
@@ -138,17 +200,9 @@ Fone NOC 3318-7890
       const interfaceMatch = linha.match(/([A-Z0-9-]+\/GC\d+B\[\d+\]\/PON\d+)/i);
       const dataMatch = linha.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
 
-      if (oltMatch && !olt) {
-        olt = oltMatch[1];
-      }
-
-      if (interfaceMatch) {
-        interfaces.push(interfaceMatch[1]);
-      }
-
-      if (dataMatch && !dataAlarme) {
-        dataAlarme = formatarData(dataMatch[1]);
-      }
+      if (oltMatch && !olt) olt = oltMatch[1];
+      if (interfaceMatch) interfaces.push(interfaceMatch[1]);
+      if (dataMatch && !dataAlarme) dataAlarme = formatarData(dataMatch[1]);
     });
 
     interfaces = ordenarInterfaces(interfaces);
