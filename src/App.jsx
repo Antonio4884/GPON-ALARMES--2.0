@@ -145,7 +145,7 @@ Fone NOC 3318-7890
 
         if (!match) return;
 
-        const [, oltNome, slot, , pon, contrato, onu] = match;
+        const [, oltNome, , slot, pon, contrato, onu] = match;
 
         olt = oltNome;
         totalCircuitos++;
