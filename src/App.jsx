@@ -8,6 +8,7 @@ function detectarGerencia(linhas) {
     if (l.includes('ont:') && l.includes('.lt') && l.includes('.pon')) return 'AMS';
     if (l.includes('ethernet lt port:')) return 'AMS_SFP';
 
+    // Huawei iMaster Primária
     if (
       l.includes('the feeder fiber is broken') ||
       l.includes('expected optical signals')
@@ -78,60 +79,54 @@ function gerarTicketsTexto(gerencia, linhas) {
   const data = new Date().toLocaleString('pt-BR');
   let resultadoFinal = '';
 
-  // IMASTER PRIMÁRIA
+  // ================= IMASTER PRIMÁRIA =================
   if (gerencia === 'IMASTER_PRIMARIA') {
     let olt = '';
-    let slot = '';
-    let port = '';
-    let onts = [];
+    let interfaces = [];
+    let totalCircuitos = 0;
 
     linhas.forEach((linha) => {
       const oltMatch = linha.match(/(olt[^\s,\t]+)/i);
       const slotMatch = linha.match(/Slot=(\d+)/i);
       const portMatch = linha.match(/Port=(\d+)/i);
-      const ontsMatch = linha.match(/The list of affected ONTs=([0-9,\-]+)/i);
+      const totalMatch = linha.match(/The number of affected ONTs=(\d+)/i);
 
-      if (oltMatch) olt = oltMatch[1];
-      if (slotMatch) slot = slotMatch[1];
-      if (portMatch) port = portMatch[1];
+      if (oltMatch && !olt) {
+        olt = oltMatch[1];
+      }
 
-      if (ontsMatch) {
-        ontsMatch[1].split(',').forEach((item) => {
-          if (item.includes('-')) {
-            const [inicio, fim] = item.split('-').map(Number);
-            for (let i = inicio; i <= fim; i++) {
-              onts.push(i);
-            }
-          } else {
-            onts.push(Number(item));
-          }
-        });
+      if (slotMatch && portMatch) {
+        interfaces.push(`${slotMatch[1]}/${portMatch[1]}`);
+      }
+
+      if (totalMatch) {
+        totalCircuitos += Number(totalMatch[1]);
       }
     });
 
-    onts = [...new Set(onts)].sort((a, b) => a - b);
+    interfaces = ordenarInterfaces(interfaces);
 
     resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha em rede Primaria OLT: ${olt}
-Equipamento: ${olt}
-Alarme: FEEDER LOS
-Data/Hora: ${data} BRT
+Falha: - Falha em rede Primaria, OLT: ${olt} - Circuitos afetados: ${totalCircuitos}
+Hora/data: ${data}
+Equipamento: OLT: ${olt}
 
-Interface:
-${olt} ${slot}/${port}
-
-Circuitos afetados: ${onts.length}
-
-Lista ONTs:
-${onts.map((o) => `ONU ${o}`).join('\n')}
+Interface: ${interfaces.join(', ')}
+Circuitos afetados: ${totalCircuitos}
 
 Fone NOC 3318-7890
+
 `;
+
+    interfaces.forEach((item) => {
+      const [slot, port] = item.split('/');
+      resultadoFinal += `Slot:${slot}/Port:${port}\n`;
+    });
 
     return resultadoFinal.trim();
   }
 
-  // UNM2000
+  // ================= UNM2000 =================
   if (gerencia === 'UNM2000') {
     const temSecundaria = linhas.some((linha) =>
       /\/PON\d+\/\d+.*:\[\d+\]/i.test(linha)
@@ -165,10 +160,7 @@ Fone NOC 3318-7890
           };
         }
 
-        agrupado[chave].clientes.push({
-          onu,
-          contrato
-        });
+        agrupado[chave].clientes.push({ onu, contrato });
       });
 
       resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
@@ -224,7 +216,7 @@ Fone NOC 3318-7890
     return resultadoFinal.trim();
   }
 
-  // ZTE
+  // ================= ZTE =================
   if (gerencia === 'ZTE') {
     let olt = '';
     let slot = '';
