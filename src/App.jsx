@@ -17,7 +17,7 @@ function detectarGerencia(linhas) {
         l.includes('off line') ||
         l.includes('link loss') ||
         l.includes('link_loss') ||
-        l.includes('/gc') ||
+        l.includes('/gcob[') ||
         l.includes('/pon')
       )
     ) {
@@ -69,11 +69,17 @@ function formatarData(dataTexto) {
 }
 
 function formatarCliente(onu, contrato) {
-  return `ONU ${String(onu).padEnd(4, ' ')} - ${contrato}`;
+  return `ONU ${String(onu).padEnd(4, ' ')} | ${contrato}`;
 }
 
 function ordenarInterfaces(lista) {
-  return [...new Set(lista)].sort((a, b) => a.localeCompare(b));
+  return [...new Set(lista)].sort((a, b) => {
+    const [slotA, portA] = a.split('/').map(Number);
+    const [slotB, portB] = b.split('/').map(Number);
+
+    if (slotA !== slotB) return slotA - slotB;
+    return portA - portB;
+  });
 }
 
 function gerarTicketsTexto(gerencia, linhas) {
@@ -126,101 +132,6 @@ Fone NOC 3318-7890
     });
 
     resultadoFinal += '\n\n';
-  }
-
-  if (gerencia === 'UNM2000') {
-    const temSecundaria = linhas.some((linha) =>
-      /\/PON\d+\/\d+.*:\[\d+\]/i.test(linha)
-    );
-
-    if (temSecundaria) {
-      const agrupado = {};
-      let olt = '';
-      let totalCircuitos = 0;
-
-      linhas.forEach((linha) => {
-        const match = linha.match(
-          /([A-Z0-9-]+)\/GC(\d+)B\[(\d+)\]\/PON(\d+)\/(\d+).*:\[(\d+)\]/i
-        );
-
-        if (!match) return;
-
-        const [, oltNome, , slot, pon, contrato, onu] = match;
-
-        olt = oltNome;
-        totalCircuitos++;
-
-        const chave = `${oltNome}-${slot}-${pon}`;
-
-        if (!agrupado[chave]) {
-          agrupado[chave] = {
-            olt: oltNome,
-            slot,
-            port: pon,
-            clientes: []
-          };
-        }
-
-        agrupado[chave].clientes.push({
-          onu,
-          contrato
-        });
-      });
-
-      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha em rede Secundaria OLT: ${olt} - circuitos afetados: ${totalCircuitos}
-Equipamento: ${olt}
-Alarme: LINK LOSS
-Data/Hora: ${data} BRT
-
-
-`;
-
-      Object.values(agrupado).forEach((grupo) => {
-        resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
-
-        grupo.clientes
-          .sort((a, b) => Number(a.onu) - Number(b.onu))
-          .forEach((cliente) => {
-            resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
-          });
-
-        resultadoFinal += '\n';
-      });
-
-      return resultadoFinal.trim();
-    }
-
-    let olt = '';
-    let interfaces = [];
-    let dataAlarme = '';
-
-    linhas.forEach((linha) => {
-      const oltMatch = linha.match(/\t([A-Z0-9-]+)\t/i);
-      const interfaceMatch = linha.match(/([A-Z0-9-]+\/GC\d+B\[\d+\]\/PON\d+)/i);
-      const dataMatch = linha.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
-
-      if (oltMatch && !olt) olt = oltMatch[1];
-      if (interfaceMatch) interfaces.push(interfaceMatch[1]);
-      if (dataMatch && !dataAlarme) dataAlarme = formatarData(dataMatch[1]);
-    });
-
-    interfaces = ordenarInterfaces(interfaces);
-
-    resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
-Falha: Falha em rede Primaria, OLT: ${olt}
-Hora/data: ${dataAlarme || data}
-Equipamento: ${olt}
-
-Interface:
-${interfaces.join('\n')}
-
-Circuitos afetados: ${interfaces.length}
-
-Fone NOC 3318-7890
-`;
-
-    return resultadoFinal.trim();
   }
 
   if (gerencia === 'IMASTER') {
