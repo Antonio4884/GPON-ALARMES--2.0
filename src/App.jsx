@@ -8,15 +8,20 @@ function detectarGerencia(linhas) {
     if (l.includes('ont:') && l.includes('.lt') && l.includes('.pon')) return 'AMS';
     if (l.includes('ethernet lt port:')) return 'AMS_SFP';
 
-    if (
-      l.includes('the feeder fiber is broken') ||
-      l.includes('expected optical signals')
-    ) {
+    // Huawei iMaster Primária
+    if (l.includes('the feeder fiber is broken')) {
       return 'IMASTER_PRIMARIA';
     }
 
+    // Huawei iMaster Secundária
+    if (
+      l.includes('the distribute fiber is broken') ||
+      l.includes('onuid=')
+    ) {
+      return 'IMASTER';
+    }
+
     if (l.includes('frame=') && l.includes('slot=') && l.includes('port=')) return 'IMASTER';
-    if (l.includes('onuid')) return 'IMASTER';
     if (l.includes('zte') || l.includes('c600') || l.includes('rack=')) return 'ZTE';
 
     if (
