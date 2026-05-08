@@ -8,12 +8,8 @@ function detectarGerencia(linhas) {
     if (l.includes('ont:') && l.includes('.lt') && l.includes('.pon')) return 'AMS';
     if (l.includes('ethernet lt port:')) return 'AMS_SFP';
 
-    // Huawei iMaster Primária
-    if (l.includes('the feeder fiber is broken')) {
-      return 'IMASTER_PRIMARIA';
-    }
+    if (l.includes('the feeder fiber is broken')) return 'IMASTER_PRIMARIA';
 
-    // Huawei iMaster Secundária
     if (
       l.includes('the distribute fiber is broken') ||
       l.includes('onuid=')
@@ -21,7 +17,6 @@ function detectarGerencia(linhas) {
       return 'IMASTER';
     }
 
-    if (l.includes('frame=') && l.includes('slot=') && l.includes('port=')) return 'IMASTER';
     if (l.includes('zte') || l.includes('c600') || l.includes('rack=')) return 'ZTE';
 
     if (
@@ -80,10 +75,7 @@ function ordenarInterfaces(lista) {
     const [slotA, portA] = a.split('/').map(Number);
     const [slotB, portB] = b.split('/').map(Number);
 
-    if (slotA !== slotB) {
-      return slotA - slotB;
-    }
-
+    if (slotA !== slotB) return slotA - slotB;
     return portA - portB;
   });
 }
@@ -104,17 +96,13 @@ function gerarTicketsTexto(gerencia, linhas) {
       const portMatch = linha.match(/Port=(\d+)/i);
       const totalMatch = linha.match(/The number of affected ONTs=(\d+)/i);
 
-      if (oltMatch && !olt) {
-        olt = oltMatch[1];
-      }
+      if (oltMatch && !olt) olt = oltMatch[1];
 
       if (slotMatch && portMatch) {
         interfaces.push(`${slotMatch[1]}/${portMatch[1]}`);
       }
 
-      if (totalMatch) {
-        totalCircuitos += Number(totalMatch[1]);
-      }
+      if (totalMatch) totalCircuitos += Number(totalMatch[1]);
     });
 
     interfaces = ordenarInterfaces(interfaces);
@@ -139,67 +127,78 @@ Fone NOC 3318-7890
     return resultadoFinal.trim();
   }
 
-  // UNM2000
-  if (gerencia === 'UNM2000') {
-    const temSecundaria = linhas.some((linha) =>
-      /\/PON\d+\/\d+.*:\[\d+\]/i.test(linha)
-    );
+  // IMASTER SECUNDÁRIA
+  if (gerencia === 'IMASTER') {
+    const agrupado = {};
+    let olt = '';
+    let totalCircuitos = 0;
 
-    if (temSecundaria) {
-      const agrupado = {};
-      let olt = '';
-      let totalCircuitos = 0;
+    linhas.forEach((linha) => {
+      const oltMatch = linha.match(/(olt[^\s,\t]+)/i);
+      const slotMatch = linha.match(/Slot=(\d+)/i);
+      const portMatch = linha.match(/Port=(\d+)/i);
+      const onuMatch = linha.match(/ONUID=(\d+)/i);
 
-      linhas.forEach((linha) => {
-        const match = linha.match(
-          /([A-Z0-9-]+)\/GC(?:\d+)?OB?\[(\d+)\]\/PON(\d+)\/(\d+).*:\[(\d+)\]/i
-        );
+      const contratoMatch = linha.match(
+        /Description of the ONT\(only for NMS\)=(\d+)|ONT Password=(\d+)/i
+      );
 
-        if (!match) return;
+      if (!slotMatch || !portMatch || !onuMatch) return;
 
-        const [, oltNome, slot, pon, contrato, onu] = match;
+      const oltNome = oltMatch ? oltMatch[1] : '';
+      const slot = slotMatch[1];
+      const port = portMatch[1];
+      const onu = onuMatch[1];
 
-        olt = oltNome;
-        totalCircuitos++;
+      let contrato = 'NCE';
 
-        const chave = `${oltNome}-${slot}-${pon}`;
+      if (contratoMatch) {
+        contrato = contratoMatch[1] || contratoMatch[2] || 'NCE';
+      }
 
-        if (!agrupado[chave]) {
-          agrupado[chave] = {
-            olt: oltNome,
-            slot,
-            port: pon,
-            clientes: []
-          };
-        }
+      olt = oltNome;
+      totalCircuitos++;
 
-        agrupado[chave].clientes.push({ onu, contrato });
-      });
+      const chave = `${oltNome}-${slot}-${port}`;
 
-      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
+      if (!agrupado[chave]) {
+        agrupado[chave] = {
+          olt: oltNome,
+          slot,
+          port,
+          clientes: []
+        };
+      }
+
+      agrupado[chave].clientes.push({ onu, contrato });
+    });
+
+    resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
 Falha em rede Secundaria OLT: ${olt} - circuitos afetados: ${totalCircuitos}
 Equipamento: ${olt}
-Alarme: LINK LOSS
+Alarme: LOSi/LOBi
 Data/Hora: ${data} BRT
 
 
 `;
 
-      Object.values(agrupado).forEach((grupo) => {
-        resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
+    Object.values(agrupado).forEach((grupo) => {
+      resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
 
-        grupo.clientes
-          .sort((a, b) => Number(a.onu) - Number(b.onu))
-          .forEach((cliente) => {
-            resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
-          });
+      grupo.clientes
+        .sort((a, b) => Number(a.onu) - Number(b.onu))
+        .forEach((cliente) => {
+          resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
+        });
 
-        resultadoFinal += '\n';
-      });
+      resultadoFinal += '\n';
+    });
 
-      return resultadoFinal.trim();
-    }
+    return resultadoFinal.trim();
+  }
 
+  // UNM2000
+  if (gerencia === 'UNM2000') {
     let olt = '';
     let interfaces = [];
 
