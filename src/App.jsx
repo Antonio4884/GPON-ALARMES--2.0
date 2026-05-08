@@ -17,7 +17,7 @@ function detectarGerencia(linhas) {
         l.includes('off line') ||
         l.includes('link loss') ||
         l.includes('link_loss') ||
-        l.includes('/gcob[') ||
+        l.includes('/gc') ||
         l.includes('/pon')
       )
     ) {
@@ -69,17 +69,11 @@ function formatarData(dataTexto) {
 }
 
 function formatarCliente(onu, contrato) {
-  return `ONU ${String(onu).padEnd(4, ' ')} | ${contrato}`;
+  return `ONU ${String(onu).padEnd(4, ' ')} - ${contrato}`;
 }
 
 function ordenarInterfaces(lista) {
-  return [...new Set(lista)].sort((a, b) => {
-    const [slotA, portA] = a.split('/').map(Number);
-    const [slotB, portB] = b.split('/').map(Number);
-
-    if (slotA !== slotB) return slotA - slotB;
-    return portA - portB;
-  });
+  return [...new Set(lista)].sort((a, b) => a.localeCompare(b));
 }
 
 function gerarTicketsTexto(gerencia, linhas) {
@@ -132,6 +126,177 @@ Fone NOC 3318-7890
     });
 
     resultadoFinal += '\n\n';
+  }
+
+  if (gerencia === 'UNM2000') {
+    const temSecundaria = linhas.some((linha) =>
+      /\/PON\d+\/\d+.*:\[\d+\]/i.test(linha)
+    );
+
+    if (temSecundaria) {
+      const agrupado = {};
+      let olt = '';
+      let totalCircuitos = 0;
+
+      linhas.forEach((linha) => {
+        const match = linha.match(
+          /([A-Z0-9-]+)\/GC(\d+)B\[(\d+)\]\/PON(\d+)\/(\d+).*:\[(\d+)\]/i
+        );
+
+        if (!match) return;
+
+        const [, oltNome, , slot, pon, contrato, onu] = match;
+
+        olt = oltNome;
+        totalCircuitos++;
+
+        const chave = `${oltNome}-${slot}-${pon}`;
+
+        if (!agrupado[chave]) {
+          agrupado[chave] = {
+            olt: oltNome,
+            slot,
+            port: pon,
+            clientes: []
+          };
+        }
+
+        agrupado[chave].clientes.push({
+          onu,
+          contrato
+        });
+      });
+
+      resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
+Falha em rede Secundaria OLT: ${olt} - circuitos afetados: ${totalCircuitos}
+Equipamento: ${olt}
+Alarme: LINK LOSS
+Data/Hora: ${data} BRT
+
+
+`;
+
+      Object.values(agrupado).forEach((grupo) => {
+        resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
+
+        grupo.clientes
+          .sort((a, b) => Number(a.onu) - Number(b.onu))
+          .forEach((cliente) => {
+            resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
+          });
+
+        resultadoFinal += '\n';
+      });
+
+      return resultadoFinal.trim();
+    }
+
+    let olt = '';
+    let interfaces = [];
+    let dataAlarme = '';
+
+    linhas.forEach((linha) => {
+      const oltMatch = linha.match(/\t([A-Z0-9-]+)\t/i);
+      const interfaceMatch = linha.match(/([A-Z0-9-]+\/GC\d+B\[\d+\]\/PON\d+)/i);
+      const dataMatch = linha.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+
+      if (oltMatch && !olt) olt = oltMatch[1];
+      if (interfaceMatch) interfaces.push(interfaceMatch[1]);
+      if (dataMatch && !dataAlarme) dataAlarme = formatarData(dataMatch[1]);
+    });
+
+    interfaces = ordenarInterfaces(interfaces);
+
+    resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
+Falha: Falha em rede Primaria, OLT: ${olt}
+Hora/data: ${dataAlarme || data}
+Equipamento: ${olt}
+
+Interface:
+${interfaces.join('\n')}
+
+Circuitos afetados: ${interfaces.length}
+
+Fone NOC 3318-7890
+`;
+
+    return resultadoFinal.trim();
+  }
+
+  if (gerencia === 'ZTE') {
+    const agrupado = {};
+    let olt = '';
+    let totalCircuitos = 0;
+
+    linhas.forEach((linha) => {
+      const oltMatch = linha.match(/(olt[^\s,\t]+)/i);
+      const slotMatch = linha.match(/SLOT=(\d+)/i);
+      const portMatch = linha.match(/PORT=(\d+)/i);
+      const onuMatch = linha.match(/ONU=(\d+)/i);
+
+      const contratoMatch = linha.match(
+        /ONU Name=(\d+)|password:(\d+)|ONU Description=(\d+)/i
+      );
+
+      if (!oltMatch || !slotMatch || !portMatch || !onuMatch) return;
+
+      const oltNome = oltMatch[1];
+      const slot = slotMatch[1];
+      const port = portMatch[1];
+      const onu = onuMatch[1];
+
+      let contrato = 'NCE';
+
+      if (contratoMatch) {
+        contrato =
+          contratoMatch[1] ||
+          contratoMatch[2] ||
+          contratoMatch[3] ||
+          'NCE';
+      }
+
+      olt = oltNome;
+      totalCircuitos++;
+
+      const chave = `${oltNome}-${slot}-${port}`;
+
+      if (!agrupado[chave]) {
+        agrupado[chave] = {
+          olt: oltNome,
+          slot,
+          port,
+          clientes: []
+        };
+      }
+
+      agrupado[chave].clientes.push({
+        onu,
+        contrato
+      });
+    });
+
+    resultadoFinal += `-:CARIMBO DE ABERTURA - NOC:-.
+Falha em rede Secundaria OLT: ${olt} - circuitos afetados: ${totalCircuitos}
+Equipamento: ${olt}
+Alarme: ZTE LOS / POWER LOW
+Data/Hora: ${data} BRT
+
+
+`;
+
+    Object.values(agrupado).forEach((grupo) => {
+      resultadoFinal += `${grupo.olt} - ${grupo.slot}/${grupo.port}\n`;
+
+      grupo.clientes
+        .sort((a, b) => Number(a.onu) - Number(b.onu))
+        .forEach((cliente) => {
+          resultadoFinal += `${formatarCliente(cliente.onu, cliente.contrato)}\n`;
+        });
+
+      resultadoFinal += '\n';
+    });
+
+    return resultadoFinal.trim();
   }
 
   if (gerencia === 'IMASTER') {
@@ -229,35 +394,20 @@ export default function App() {
   const [resultado, setResultado] = useState('');
 
   return (
-    <div
-      style={{
-        padding: '20px',
-        fontFamily: 'Arial',
-        maxWidth: '1000px',
-        margin: '0 auto'
-      }}
-    >
+    <div style={{ padding: '20px', fontFamily: 'Arial', maxWidth: '1000px', margin: '0 auto' }}>
       <h1>🔧 Huawei, UNM2000, AMS5520 e ZTE</h1>
 
       <textarea
         value={entrada}
         onChange={(e) => setEntrada(e.target.value)}
         placeholder="Cole os alarmes aqui..."
-        style={{
-          width: '100%',
-          height: '250px',
-          padding: '10px',
-          marginBottom: '10px'
-        }}
+        style={{ width: '100%', height: '250px', padding: '10px', marginBottom: '10px' }}
       />
 
       <div style={{ marginBottom: '10px' }}>
         <button
           onClick={() => setResultado(processarTexto(entrada))}
-          style={{
-            marginRight: '10px',
-            padding: '10px 20px'
-          }}
+          style={{ marginRight: '10px', padding: '10px 20px' }}
         >
           Gerar Alarme
         </button>
@@ -267,9 +417,7 @@ export default function App() {
             setEntrada('');
             setResultado('');
           }}
-          style={{
-            padding: '10px 20px'
-          }}
+          style={{ padding: '10px 20px' }}
         >
           Limpar
         </button>
@@ -279,11 +427,7 @@ export default function App() {
         value={resultado}
         readOnly
         placeholder="Resultado aparecerá aqui..."
-        style={{
-          width: '100%',
-          height: '250px',
-          padding: '10px'
-        }}
+        style={{ width: '100%', height: '250px', padding: '10px' }}
       />
     </div>
   );
