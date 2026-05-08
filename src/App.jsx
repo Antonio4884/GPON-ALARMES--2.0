@@ -79,7 +79,7 @@ function gerarTicketsTexto(gerencia, linhas) {
   const data = new Date().toLocaleString('pt-BR');
   let resultadoFinal = '';
 
-  // ================= IMASTER PRIMARIA =================
+  // IMASTER PRIMÁRIA
   if (gerencia === 'IMASTER_PRIMARIA') {
     let olt = '';
     let frame = '';
@@ -135,7 +135,7 @@ Fone NOC 3318-7890
     return resultadoFinal.trim();
   }
 
-  // ================= UNM2000 =================
+  // UNM2000
   if (gerencia === 'UNM2000') {
     const temSecundaria = linhas.some((linha) =>
       /\/PON\d+\/\d+.*:\[\d+\]/i.test(linha)
@@ -180,6 +180,7 @@ Falha em rede Secundaria OLT: ${olt} - circuitos afetados: ${totalCircuitos}
 Equipamento: ${olt}
 Alarme: LINK LOSS
 Data/Hora: ${data} BRT
+
 
 `;
 
@@ -227,7 +228,7 @@ Fone NOC 3318-7890
     return resultadoFinal.trim();
   }
 
-  // ================= ZTE =================
+  // ZTE
   if (gerencia === 'ZTE') {
     let olt = '';
     let slot = '';
@@ -273,7 +274,7 @@ export default function App() {
 
   return (
     <div style={{ padding: '20px', fontFamily: 'Arial', maxWidth: '1000px', margin: '0 auto' }}>
-      <h1>🔧 Parser Huawei / UNM2000 / AMS5520 / ZTE</h1>
+      <h1>🔧 Huawei, UNM2000, AMS5520 e ZTE</h1>
 
       <textarea
         value={entrada}
