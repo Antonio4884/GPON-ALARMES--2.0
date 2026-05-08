@@ -8,7 +8,6 @@ function detectarGerencia(linhas) {
     if (l.includes('ont:') && l.includes('.lt') && l.includes('.pon')) return 'AMS';
     if (l.includes('ethernet lt port:')) return 'AMS_SFP';
 
-    // Huawei iMaster Primária
     if (
       l.includes('the feeder fiber is broken') ||
       l.includes('expected optical signals')
@@ -72,14 +71,23 @@ function formatarCliente(onu, contrato) {
 }
 
 function ordenarInterfaces(lista) {
-  return [...new Set(lista)].sort((a, b) => a.localeCompare(b));
+  return [...new Set(lista)].sort((a, b) => {
+    const [slotA, portA] = a.split('/').map(Number);
+    const [slotB, portB] = b.split('/').map(Number);
+
+    if (slotA !== slotB) {
+      return slotA - slotB;
+    }
+
+    return portA - portB;
+  });
 }
 
 function gerarTicketsTexto(gerencia, linhas) {
   const data = new Date().toLocaleString('pt-BR');
   let resultadoFinal = '';
 
-  // ================= IMASTER PRIMÁRIA =================
+  // IMASTER PRIMÁRIA
   if (gerencia === 'IMASTER_PRIMARIA') {
     let olt = '';
     let interfaces = [];
@@ -126,7 +134,7 @@ Fone NOC 3318-7890
     return resultadoFinal.trim();
   }
 
-  // ================= UNM2000 =================
+  // UNM2000
   if (gerencia === 'UNM2000') {
     const temSecundaria = linhas.some((linha) =>
       /\/PON\d+\/\d+.*:\[\d+\]/i.test(linha)
@@ -216,7 +224,7 @@ Fone NOC 3318-7890
     return resultadoFinal.trim();
   }
 
-  // ================= ZTE =================
+  // ZTE
   if (gerencia === 'ZTE') {
     let olt = '';
     let slot = '';
