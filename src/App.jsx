@@ -8,7 +8,6 @@ function detectarGerencia(linhas) {
     if (l.includes('ont:') && l.includes('.lt') && l.includes('.pon')) return 'AMS';
     if (l.includes('ethernet lt port:')) return 'AMS_SFP';
 
-    // Huawei iMaster primária
     if (
       l.includes('the feeder fiber is broken') ||
       l.includes('expected optical signals')
@@ -82,20 +81,17 @@ function gerarTicketsTexto(gerencia, linhas) {
   // IMASTER PRIMÁRIA
   if (gerencia === 'IMASTER_PRIMARIA') {
     let olt = '';
-    let frame = '';
     let slot = '';
     let port = '';
     let onts = [];
 
     linhas.forEach((linha) => {
       const oltMatch = linha.match(/(olt[^\s,\t]+)/i);
-      const frameMatch = linha.match(/Frame=(\d+)/i);
       const slotMatch = linha.match(/Slot=(\d+)/i);
       const portMatch = linha.match(/Port=(\d+)/i);
       const ontsMatch = linha.match(/The list of affected ONTs=([0-9,\-]+)/i);
 
       if (oltMatch) olt = oltMatch[1];
-      if (frameMatch) frame = frameMatch[1];
       if (slotMatch) slot = slotMatch[1];
       if (portMatch) port = portMatch[1];
 
@@ -122,7 +118,7 @@ Alarme: FEEDER LOS
 Data/Hora: ${data} BRT
 
 Interface:
-${olt}:F${frame}.S${slot}.P${port}
+${olt} ${slot}/${port}
 
 Circuitos afetados: ${onts.length}
 
