@@ -69,7 +69,7 @@ function formatarData(dataTexto) {
 }
 
 function formatarCliente(onu, contrato) {
-  return `ONU ${String(onu).padEnd(4, ' ')} | ${contrato}`;
+  return `ONU ${String(onu).padEnd(4, ' ')} - ${contrato}`;
 }
 
 function ordenarInterfaces(lista) {
